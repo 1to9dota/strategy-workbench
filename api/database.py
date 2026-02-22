@@ -111,6 +111,28 @@ _DEFAULT_STRATEGIES = [
             "confirm_bars": 3,    # 连续3根站稳
         }),
     },
+    {
+        "id": "rsi_pullback",
+        "name": "RSI回调",
+        "params": json.dumps({
+            "rsi_period": 14,
+            "ma_period": 120,       # 趋势判断用长期MA
+            "oversold": 35,         # 上升趋势中的买入区
+            "overbought": 65,       # 下降趋势中的卖出区
+            "stop_loss_pct": 0.025,
+        }),
+    },
+    {
+        "id": "bb_squeeze",
+        "name": "布林收缩突破",
+        "params": json.dumps({
+            "bb_period": 20,
+            "squeeze_lookback": 20,
+            "squeeze_percentile": 0.3,
+            "ma_period": 120,       # 趋势过滤（0=不过滤）
+            "stop_loss_pct": 0.025,
+        }),
+    },
 ]
 
 # 默认系统配置

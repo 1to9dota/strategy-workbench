@@ -117,6 +117,73 @@ def calc_bollinger(closes: list[float], period: int = 20) -> dict:
     }
 
 
+def calc_rsi_series(closes: list[float], period: int = 14) -> list[float]:
+    """RSI 完整序列（0-100），前 period 个值为 50（中性）"""
+    n = len(closes)
+    result = [50.0] * n
+    if n < period + 1:
+        return result
+    # 计算每根K线的涨跌幅
+    gains = [0.0]
+    losses = [0.0]
+    for i in range(1, n):
+        diff = closes[i] - closes[i - 1]
+        gains.append(max(0, diff))
+        losses.append(max(0, -diff))
+    # 滑动窗口计算 RSI
+    for i in range(period, n):
+        avg_gain = sum(gains[i - period + 1:i + 1]) / period
+        avg_loss = sum(losses[i - period + 1:i + 1]) / period
+        if avg_loss == 0:
+            result[i] = 100.0
+        else:
+            result[i] = 100 - (100 / (1 + avg_gain / avg_loss))
+    return result
+
+
+def calc_atr_series(highs: list[float], lows: list[float],
+                    closes: list[float], period: int = 14) -> list[float]:
+    """ATR 完整序列（Wilder 平滑），用于动态止损"""
+    n = len(closes)
+    result = [0.0] * n
+    if n < 2:
+        return result
+    # True Range 序列
+    tr = [highs[0] - lows[0]]
+    for i in range(1, n):
+        tr.append(max(
+            highs[i] - lows[i],
+            abs(highs[i] - closes[i - 1]),
+            abs(lows[i] - closes[i - 1]),
+        ))
+    # 第一个 ATR = TR 的简单平均
+    if n >= period:
+        result[period - 1] = sum(tr[:period]) / period
+        # Wilder 平滑：ATR = (prev_ATR * (period-1) + TR) / period
+        for i in range(period, n):
+            result[i] = (result[i - 1] * (period - 1) + tr[i]) / period
+    return result
+
+
+def calc_bollinger_series(closes: list[float], period: int = 20) -> dict:
+    """布林带完整序列，用于收缩突破检测
+    返回: {upper: list, middle: list, lower: list, bandwidth: list}"""
+    n = len(closes)
+    upper = [0.0] * n
+    middle = [0.0] * n
+    lower = [0.0] * n
+    bandwidth = [0.0] * n
+    for i in range(period - 1, n):
+        window = closes[i - period + 1:i + 1]
+        sma = sum(window) / period
+        std = (sum((c - sma) ** 2 for c in window) / period) ** 0.5
+        middle[i] = sma
+        upper[i] = sma + 2 * std
+        lower[i] = sma - 2 * std
+        bandwidth[i] = (upper[i] - lower[i]) / sma * 100 if sma > 0 else 0
+    return {"upper": upper, "middle": middle, "lower": lower, "bandwidth": bandwidth}
+
+
 def calc_ma(closes: list[float], period: int) -> float:
     """通用 MA 计算（SMA），返回最新值"""
     return calc_sma(closes, period)

@@ -16,6 +16,8 @@ from datetime import datetime, timezone, timedelta
 import api.strategies.macd_divergence  # noqa: F401
 import api.strategies.pin_bar          # noqa: F401
 import api.strategies.ma90             # noqa: F401
+import api.strategies.rsi_pullback     # noqa: F401
+import api.strategies.bb_squeeze       # noqa: F401
 
 from api.strategies.registry import strategy_registry
 from api.engine.resonance import calc_resonance

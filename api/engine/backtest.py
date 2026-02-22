@@ -13,7 +13,7 @@ from typing import Optional
 
 from api.strategies.registry import strategy_registry
 from api.engine.resonance import calc_resonance
-from api.engine.indicators import calc_sma_series
+from api.engine.indicators import calc_sma_series, calc_atr_series
 
 
 async def run_backtest(
@@ -27,6 +27,12 @@ async def run_backtest(
     leverage: int = 3,
     trend_filter: bool = False,
     trend_ma_period: int = 200,
+    use_atr_stop: bool = False,
+    atr_stop_multiplier: float = 1.5,
+    trailing_stop_atr: float = 0,
+    volume_filter: bool = False,
+    min_volume_ratio: float = 1.5,
+    volume_lookback: int = 20,
 ) -> dict:
     """执行回测
 
@@ -41,6 +47,12 @@ async def run_backtest(
         leverage: 杠杆倍数
         trend_filter: 是否启用趋势过滤（价格在MA上方只做多，下方只做空）
         trend_ma_period: 趋势过滤用的MA周期（默认200）
+        use_atr_stop: 使用 ATR 动态止损替代策略固定止损
+        atr_stop_multiplier: ATR 止损倍数（默认1.5倍ATR）
+        trailing_stop_atr: 移动止盈 ATR 倍数（0=关闭，建议2.0）
+        volume_filter: 量能过滤，仅在放量时开仓
+        min_volume_ratio: 最低量比阈值（当前成交量 / 近N期平均）
+        volume_lookback: 量比计算回看周期
 
     返回:
         完整回测报告
@@ -74,8 +86,15 @@ async def run_backtest(
     if trend_filter:
         all_closes = [c["close"] for c in candles]
         trend_ma = calc_sma_series(all_closes, trend_ma_period)
-        # 预热期至少覆盖趋势 MA 周期
         max_startup = max(max_startup, trend_ma_period)
+
+    # ATR 序列：用于动态止损和移动止盈
+    atr_series = None
+    if use_atr_stop or trailing_stop_atr > 0:
+        all_highs = [c["high"] for c in candles]
+        all_lows = [c["low"] for c in candles]
+        all_closes = [c["close"] for c in candles]
+        atr_series = calc_atr_series(all_highs, all_lows, all_closes, period=14)
 
     # 回测状态
     capital = initial_capital
@@ -110,14 +129,24 @@ async def run_backtest(
                 position_size = max(0, max_allowed - total_used)
 
             if position_size > 0:
+                # ATR 动态止损：替代策略固定百分比止损
+                stop_loss = signal["stop_loss"]
+                if use_atr_stop and atr_series and atr_series[i] > 0:
+                    atr_val = atr_series[i]
+                    if signal["direction"] == "long":
+                        stop_loss = entry_price - atr_stop_multiplier * atr_val
+                    else:
+                        stop_loss = entry_price + atr_stop_multiplier * atr_val
+
                 pos = {
                     "direction": signal["direction"],
                     "entry_price": entry_price,
                     "entry_ts": current_ts,
                     "entry_index": i,
                     "position_size": position_size,
-                    "stop_loss": signal["stop_loss"],
-                    "initial_stop_loss": signal["stop_loss"],
+                    "stop_loss": stop_loss,
+                    "initial_stop_loss": stop_loss,
+                    "best_price": entry_price,  # 移动止盈用：追踪最优价
                     "strategies": signal["strategies"],
                     "enter_tag": signal["enter_tag"],
                     "strength": signal["strength"],
@@ -126,7 +155,20 @@ async def run_backtest(
                 open_positions.append(pos)
                 capital -= position_size  # 开仓时扣减可用资金
 
-        # ---- 2. 检查持仓：止损/止盈/ROI ----
+        # ---- 2. 检查持仓：移动止盈 + 止损/ROI ----
+        # 移动止盈：追踪最优价格，动态上移止损
+        if trailing_stop_atr > 0 and atr_series and atr_series[i] > 0:
+            atr_val = atr_series[i]
+            for pos in open_positions:
+                if pos["direction"] == "long":
+                    pos["best_price"] = max(pos["best_price"], current["high"])
+                    trail_stop = pos["best_price"] - trailing_stop_atr * atr_val
+                    pos["stop_loss"] = max(pos["stop_loss"], trail_stop)  # 只能上移
+                else:
+                    pos["best_price"] = min(pos["best_price"], current["low"])
+                    trail_stop = pos["best_price"] + trailing_stop_atr * atr_val
+                    pos["stop_loss"] = min(pos["stop_loss"], trail_stop)  # 只能下移
+
         positions_to_close = []
         for pos in open_positions:
             exit_reason = None
@@ -189,6 +231,14 @@ async def run_backtest(
                     if (s["direction"] == "long" and current_price > ma_val) or
                        (s["direction"] == "short" and current_price < ma_val)
                 ]
+
+        # 量能过滤：只在放量时触发信号
+        if volume_filter and raw_signals and i >= volume_lookback:
+            volumes = [candles[j]["volume"] for j in range(i - volume_lookback, i)]
+            avg_vol = sum(volumes) / len(volumes) if volumes else 1
+            cur_vol = candles[i]["volume"]
+            if avg_vol > 0 and cur_vol / avg_vol < min_volume_ratio:
+                raw_signals = []
 
         # 共振计算
         if raw_signals:
