@@ -2,6 +2,10 @@ FROM node:20-alpine AS builder
 
 WORKDIR /app
 
+# 同源模式：空串表示相对路径请求，Nginx 反代到 API
+ARG NEXT_PUBLIC_API_URL=""
+ENV NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL}
+
 COPY web/package*.json ./
 RUN npm ci
 

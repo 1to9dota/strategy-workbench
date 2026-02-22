@@ -2,7 +2,8 @@
 
 import type { BacktestRequest, BacktestResult, BacktestHistory, Strategy, Candle, Signal, Settings } from "./types";
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+// ?? 而非 ||：空串是有效值，表示同源模式（Nginx 反代）
+const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
 function getToken(): string | null {
   if (typeof window === "undefined") return null;
@@ -175,7 +176,11 @@ export function connectSignalsWS(onMessage: (data: unknown) => void): { close: (
   if (typeof window === "undefined") return { close: () => {} };
 
   const token = getToken();
-  const wsUrl = API_BASE.replace("http", "ws");
+  // 同源模式：从 window.location 推导 WebSocket URL
+  const wsProtocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+  const wsBase = API_BASE
+    ? API_BASE.replace(/^http/, "ws")
+    : `${wsProtocol}//${window.location.host}`;
   let ws: WebSocket | null = null;
   let retryCount = 0;
   let retryTimer: ReturnType<typeof setTimeout> | null = null;
@@ -183,7 +188,7 @@ export function connectSignalsWS(onMessage: (data: unknown) => void): { close: (
 
   function connect() {
     if (closed) return;
-    const url = `${wsUrl}/api/signals/ws/signals${token ? `?token=${token}` : ""}`;
+    const url = `${wsBase}/api/signals/ws/signals${token ? `?token=${token}` : ""}`;
     ws = new WebSocket(url);
 
     ws.onopen = () => {
