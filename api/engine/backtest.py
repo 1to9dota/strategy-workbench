@@ -13,6 +13,7 @@ from typing import Optional
 
 from api.strategies.registry import strategy_registry
 from api.engine.resonance import calc_resonance
+from api.engine.indicators import calc_sma_series
 
 
 async def run_backtest(
@@ -24,6 +25,8 @@ async def run_backtest(
     position_rules: dict = None,
     roi_table: dict = None,
     leverage: int = 3,
+    trend_filter: bool = False,
+    trend_ma_period: int = 200,
 ) -> dict:
     """执行回测
 
@@ -36,6 +39,8 @@ async def run_backtest(
         position_rules: 仓位规则
         roi_table: 时间衰减ROI表 {"0": 0.05, "30": 0.03, ...}
         leverage: 杠杆倍数
+        trend_filter: 是否启用趋势过滤（价格在MA上方只做多，下方只做空）
+        trend_ma_period: 趋势过滤用的MA周期（默认200）
 
     返回:
         完整回测报告
@@ -63,6 +68,14 @@ async def run_backtest(
 
     # 计算最大预热期
     max_startup = max(s.startup_candle_count for s in strategies)
+
+    # 趋势过滤：预计算长期 MA 序列
+    trend_ma = None
+    if trend_filter:
+        all_closes = [c["close"] for c in candles]
+        trend_ma = calc_sma_series(all_closes, trend_ma_period)
+        # 预热期至少覆盖趋势 MA 周期
+        max_startup = max(max_startup, trend_ma_period)
 
     # 回测状态
     capital = initial_capital
@@ -166,6 +179,16 @@ async def run_backtest(
             sig = strategy.check_signal(candles, i)
             if sig:
                 raw_signals.append(sig)
+
+        # 趋势过滤：只允许顺势交易
+        if trend_ma and raw_signals:
+            ma_val = trend_ma[i]
+            if ma_val > 0:
+                raw_signals = [
+                    s for s in raw_signals
+                    if (s["direction"] == "long" and current_price > ma_val) or
+                       (s["direction"] == "short" and current_price < ma_val)
+                ]
 
         # 共振计算
         if raw_signals:

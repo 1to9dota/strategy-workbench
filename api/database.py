@@ -97,6 +97,7 @@ _DEFAULT_STRATEGIES = [
     {
         "id": "pin_bar",
         "name": "针形态",
+        "enabled": 0,  # 回测验证胜率过低（13-19%），默认关闭
         "params": json.dumps({
             "wick_ratio": 5.0,    # 影线 ≥ 5倍实体
             "body_ratio": 0.2,    # 实体 ≤ 20% 总长
@@ -104,9 +105,9 @@ _DEFAULT_STRATEGIES = [
     },
     {
         "id": "ma90",
-        "name": "MA90突破",
+        "name": "MA120突破",
         "params": json.dumps({
-            "ma_period": 90,
+            "ma_period": 120,     # 回测验证 MA120 优于 MA90
             "confirm_bars": 3,    # 连续3根站稳
         }),
     },
@@ -131,6 +132,8 @@ _DEFAULT_SETTINGS = {
         "60": 0.01,   # 持仓60根K线后1%止盈
         "120": 0,     # 持仓120根K线后保本就跑
     }),
+    "trend_filter": json.dumps(True),    # 趋势过滤：只允许顺势交易
+    "trend_ma_period": json.dumps(200),  # 趋势判断用 MA200
 }
 
 
@@ -159,9 +162,10 @@ class Database:
     async def _init_defaults(self):
         """初始化默认策略和配置（不覆盖已有数据）"""
         for s in _DEFAULT_STRATEGIES:
+            enabled = s.get("enabled", 1)
             await self._db.execute(
-                "INSERT OR IGNORE INTO strategies (id, name, params) VALUES (?, ?, ?)",
-                (s["id"], s["name"], s["params"]),
+                "INSERT OR IGNORE INTO strategies (id, name, enabled, params) VALUES (?, ?, ?, ?)",
+                (s["id"], s["name"], enabled, s["params"]),
             )
         for k, v in _DEFAULT_SETTINGS.items():
             await self._db.execute(

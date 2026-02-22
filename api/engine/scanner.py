@@ -19,6 +19,7 @@ import api.strategies.ma90             # noqa: F401
 
 from api.strategies.registry import strategy_registry
 from api.engine.resonance import calc_resonance
+from api.engine.indicators import calc_sma
 from api.exchange.data_fetcher import fetch_candles
 from api.database import get_db
 
@@ -50,7 +51,7 @@ async def scan_pair(inst_id: str, bar: str, min_strength: int = 1) -> dict | Non
         logger.warning(f"K线不足: {inst_id} {bar} 仅 {len(candles)} 根")
         return None
 
-    # 三个策略检测最新K线
+    # 策略检测最新K线
     index = len(candles) - 1
     raw_signals = []
     for strategy in strategies:
@@ -60,6 +61,24 @@ async def scan_pair(inst_id: str, bar: str, min_strength: int = 1) -> dict | Non
 
     if not raw_signals:
         return None
+
+    # 趋势过滤：价格在长期MA上方只做多，下方只做空
+    all_settings = await db.get_all_settings()
+    trend_filter_on = all_settings.get("trend_filter", False)
+    if trend_filter_on:
+        closes = [c["close"] for c in candles]
+        trend_ma_period = all_settings.get("trend_ma_period", 200)
+        ma_val = calc_sma(closes, trend_ma_period)
+        if ma_val > 0:
+            current_price = candles[index]["close"]
+            raw_signals = [
+                s for s in raw_signals
+                if (s["direction"] == "long" and current_price > ma_val) or
+                   (s["direction"] == "short" and current_price < ma_val)
+            ]
+            if not raw_signals:
+                logger.info(f"趋势过滤: {inst_id} 信号被过滤（逆势）")
+                return None
 
     # 共振计算
     resonance = calc_resonance(raw_signals)
