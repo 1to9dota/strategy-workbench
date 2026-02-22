@@ -1,0 +1,8 @@
+fastapi>=0.115.0
+uvicorn>=0.30.0
+aiosqlite>=0.20.0
+python-dotenv>=1.0.0
+PyJWT>=2.8.0
+python-okx>=5.3.0
+apscheduler>=3.10.0
+python-telegram-bot>=21.0
