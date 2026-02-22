@@ -114,22 +114,24 @@ _DEFAULT_STRATEGIES = [
     {
         "id": "rsi_pullback",
         "name": "RSI回调",
+        "enabled": 0,  # 单独胜率低（22-35%），但共振确认有价值，保留代码
         "params": json.dumps({
             "rsi_period": 14,
-            "ma_period": 120,       # 趋势判断用长期MA
-            "oversold": 35,         # 上升趋势中的买入区
-            "overbought": 65,       # 下降趋势中的卖出区
+            "ma_period": 120,
+            "oversold": 35,
+            "overbought": 65,
             "stop_loss_pct": 0.025,
         }),
     },
     {
         "id": "bb_squeeze",
         "name": "布林收缩突破",
+        "enabled": 0,  # 回测胜率过低（10-22%），默认关闭
         "params": json.dumps({
             "bb_period": 20,
             "squeeze_lookback": 20,
             "squeeze_percentile": 0.3,
-            "ma_period": 120,       # 趋势过滤（0=不过滤）
+            "ma_period": 120,
             "stop_loss_pct": 0.025,
         }),
     },
@@ -156,6 +158,9 @@ _DEFAULT_SETTINGS = {
     }),
     "trend_filter": json.dumps(True),    # 趋势过滤：只允许顺势交易
     "trend_ma_period": json.dumps(200),  # 趋势判断用 MA200
+    "volume_filter": json.dumps(True),   # 量能过滤：仅放量时开仓
+    "min_volume_ratio": json.dumps(1.0), # 量比阈值（当前量/近期均量）
+    "volume_lookback": json.dumps(20),   # 量比回看周期
 }
 
 

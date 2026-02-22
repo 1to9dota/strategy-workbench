@@ -82,6 +82,19 @@ async def scan_pair(inst_id: str, bar: str, min_strength: int = 1) -> dict | Non
                 logger.info(f"趋势过滤: {inst_id} 信号被过滤（逆势）")
                 return None
 
+    # 量能过滤：只在放量时触发信号
+    volume_filter_on = all_settings.get("volume_filter", False)
+    if volume_filter_on and raw_signals:
+        vol_lookback = all_settings.get("volume_lookback", 20)
+        min_vol_ratio = all_settings.get("min_volume_ratio", 1.0)
+        if index >= vol_lookback:
+            volumes = [candles[j]["volume"] for j in range(index - vol_lookback, index)]
+            avg_vol = sum(volumes) / len(volumes) if volumes else 1
+            cur_vol = candles[index]["volume"]
+            if avg_vol > 0 and cur_vol / avg_vol < min_vol_ratio:
+                logger.info(f"量能过滤: {inst_id} 量比不足 ({cur_vol/avg_vol:.2f} < {min_vol_ratio})")
+                return None
+
     # 共振计算
     resonance = calc_resonance(raw_signals)
     if not resonance or resonance["strength"] < min_strength:
